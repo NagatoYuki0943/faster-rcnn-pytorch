@@ -12,7 +12,7 @@ def fit_one_epoch(model, train_util, loss_history, eval_callback, optimizer, epo
     rpn_cls_loss = 0
     roi_loc_loss = 0
     roi_cls_loss = 0
-    
+
     val_loss = 0
     print('Start Train')
     with tqdm(total=epoch_step,desc=f'Epoch {epoch + 1}/{Epoch}',postfix=dict,mininterval=0.3) as pbar:
@@ -30,12 +30,12 @@ def fit_one_epoch(model, train_util, loss_history, eval_callback, optimizer, epo
             rpn_cls_loss    += rpn_cls.item()
             roi_loc_loss    += roi_loc.item()
             roi_cls_loss    += roi_cls.item()
-            
-            pbar.set_postfix(**{'total_loss'    : total_loss / (iteration + 1), 
-                                'rpn_loc'       : rpn_loc_loss / (iteration + 1),  
-                                'rpn_cls'       : rpn_cls_loss / (iteration + 1), 
-                                'roi_loc'       : roi_loc_loss / (iteration + 1), 
-                                'roi_cls'       : roi_cls_loss / (iteration + 1), 
+
+            pbar.set_postfix(**{'total_loss'    : total_loss / (iteration + 1),
+                                'rpn_loc'       : rpn_loc_loss / (iteration + 1),
+                                'rpn_cls'       : rpn_cls_loss / (iteration + 1),
+                                'roi_loc'       : roi_loc_loss / (iteration + 1),
+                                'roi_cls'       : roi_cls_loss / (iteration + 1),
                                 'lr'            : get_lr(optimizer)})
             pbar.update(1)
 
@@ -53,7 +53,7 @@ def fit_one_epoch(model, train_util, loss_history, eval_callback, optimizer, epo
                 train_util.optimizer.zero_grad()
                 _, _, _, _, val_total = train_util.forward(images, boxes, labels, 1)
                 val_loss += val_total.item()
-                
+
                 pbar.set_postfix(**{'val_loss'  : val_loss / (iteration + 1)})
                 pbar.update(1)
 
@@ -62,7 +62,7 @@ def fit_one_epoch(model, train_util, loss_history, eval_callback, optimizer, epo
     eval_callback.on_epoch_end(epoch + 1)
     print('Epoch:'+ str(epoch + 1) + '/' + str(Epoch))
     print('Total Loss: %.3f || Val Loss: %.3f ' % (total_loss / epoch_step, val_loss / epoch_step_val))
-    
+
     #-----------------------------------------------#
     #   保存权值
     #-----------------------------------------------#
@@ -72,5 +72,5 @@ def fit_one_epoch(model, train_util, loss_history, eval_callback, optimizer, epo
     if len(loss_history.val_loss) <= 1 or (val_loss / epoch_step_val) <= min(loss_history.val_loss):
         print('Save best model to best_epoch_weights.pth')
         torch.save(model.state_dict(), os.path.join(save_dir, "best_epoch_weights.pth"))
-            
+
     torch.save(model.state_dict(), os.path.join(save_dir, "last_epoch_weights.pth"))

@@ -1,3 +1,7 @@
+"""
+model_path ,classes_path, confidence, nms_iou
+"""
+
 import colorsys
 import os
 import time
@@ -30,7 +34,7 @@ class FRCNN(object):
         #   验证集损失较低不代表mAP较高，仅代表该权值在验证集上泛化性能较好。
         #   如果出现shape不匹配，同时要注意训练时的model_path和classes_path参数的修改
         #--------------------------------------------------------------------------#
-        "model_path"    : 'model_data/voc_weights_resnet.pth',
+        "model_path"    : 'logs/ep043-loss0.767-val_loss0.803.pth',
         "classes_path"  : 'model_data/voc_classes.txt',
         #---------------------------------------------------------------------#
         #   网络的主干特征提取网络，resnet50或者vgg
@@ -41,7 +45,7 @@ class FRCNN(object):
         #---------------------------------------------------------------------#
         "confidence"    : 0.5,
         #---------------------------------------------------------------------#
-        #   非极大抑制所用到的nms_iou大小
+        #   非极大抑制所用到的nms_iou大小,越小代表越严格
         #---------------------------------------------------------------------#
         "nms_iou"       : 0.3,
         #---------------------------------------------------------------------#
@@ -101,11 +105,11 @@ class FRCNN(object):
         self.net.load_state_dict(torch.load(self.model_path, map_location=device))
         self.net    = self.net.eval()
         print('{} model, anchors, and classes loaded.'.format(self.model_path))
-        
+
         if self.cuda:
             self.net = nn.DataParallel(self.net)
             self.net = self.net.cuda()
-    
+
     #---------------------------------------------------#
     #   检测图片
     #---------------------------------------------------#
@@ -136,28 +140,28 @@ class FRCNN(object):
             images = torch.from_numpy(image_data)
             if self.cuda:
                 images = images.cuda()
-            
+
             #-------------------------------------------------------------#
-            #   roi_cls_locs  建议框的调整参数
-            #   roi_scores    建议框的种类得分
-            #   rois          建议框的坐标
+            #   roi_cls_locs: 建议框的调整参数
+            #   roi_scores:   建议框的种类得分
+            #   rois:         建议框的坐标
             #-------------------------------------------------------------#
             roi_cls_locs, roi_scores, rois, _ = self.net(images)
             #-------------------------------------------------------------#
-            #   利用classifier的预测结果对建议框进行解码，获得预测框
+            #   利用classifier的预测结果对建议框进行解码和非极大抑制，获得预测框
             #-------------------------------------------------------------#
-            results = self.bbox_util.forward(roi_cls_locs, roi_scores, rois, image_shape, input_shape, 
+            results = self.bbox_util.forward(roi_cls_locs, roi_scores, rois, image_shape, input_shape,
                                                     nms_iou = self.nms_iou, confidence = self.confidence)
             #---------------------------------------------------------#
             #   如果没有检测出物体，返回原图
-            #---------------------------------------------------------#           
+            #---------------------------------------------------------#
             if len(results[0]) <= 0:
                 return image
-                
-            top_label   = np.array(results[0][:, 5], dtype = 'int32')
-            top_conf    = results[0][:, 4]
-            top_boxes   = results[0][:, :4]
-        
+
+            top_label   = np.array(results[0][:, 5], dtype = 'int32')   # 预测框种类
+            top_conf    = results[0][:, 4]                              # 预测框置信度
+            top_boxes   = results[0][:, :4]                             # 预测框坐标
+
         #---------------------------------------------------------#
         #   设置字体与边框厚度
         #---------------------------------------------------------#
@@ -185,7 +189,7 @@ class FRCNN(object):
                 left    = max(0, np.floor(left).astype('int32'))
                 bottom  = min(image.size[1], np.floor(bottom).astype('int32'))
                 right   = min(image.size[0], np.floor(right).astype('int32'))
-                
+
                 dir_save_path = "img_crop"
                 if not os.path.exists(dir_save_path):
                     os.makedirs(dir_save_path)
@@ -195,13 +199,15 @@ class FRCNN(object):
         #---------------------------------------------------------#
         #   图像绘制
         #---------------------------------------------------------#
+
         for i, c in list(enumerate(top_label)):
-            predicted_class = self.class_names[int(c)]
-            box             = top_boxes[i]
-            score           = top_conf[i]
+            predicted_class = self.class_names[int(c)]  # 预测框种类
+            box             = top_boxes[i]              # 预测框坐标
+            score           = top_conf[i]               # 预测框置信度
 
             top, left, bottom, right = box
 
+            # 防止超出边界
             top     = max(0, np.floor(top).astype('int32'))
             left    = max(0, np.floor(left).astype('int32'))
             bottom  = min(image.size[1], np.floor(bottom).astype('int32'))
@@ -211,8 +217,8 @@ class FRCNN(object):
             draw = ImageDraw.Draw(image)
             label_size = draw.textsize(label, font)
             label = label.encode('utf-8')
-            # print(label, top, left, bottom, right)
-            
+            print(label, top, left, bottom, right)
+
             if top - label_size[1] >= 0:
                 text_origin = np.array([left, top - label_size[1]])
             else:
@@ -237,7 +243,7 @@ class FRCNN(object):
         #   代码仅仅支持RGB图像的预测，所有其它类型的图像都会转化成RGB
         #---------------------------------------------------------#
         image       = cvtColor(image)
-        
+
         #---------------------------------------------------------#
         #   给原图像进行resize，resize到短边为600的大小上
         #---------------------------------------------------------#
@@ -256,7 +262,7 @@ class FRCNN(object):
             #-------------------------------------------------------------#
             #   利用classifier的预测结果对建议框进行解码，获得预测框
             #-------------------------------------------------------------#
-            results = self.bbox_util.forward(roi_cls_locs, roi_scores, rois, image_shape, input_shape, 
+            results = self.bbox_util.forward(roi_cls_locs, roi_scores, rois, image_shape, input_shape,
                                                     nms_iou = self.nms_iou, confidence = self.confidence)
         t1 = time.time()
         for _ in range(test_interval):
@@ -265,9 +271,9 @@ class FRCNN(object):
                 #-------------------------------------------------------------#
                 #   利用classifier的预测结果对建议框进行解码，获得预测框
                 #-------------------------------------------------------------#
-                results = self.bbox_util.forward(roi_cls_locs, roi_scores, rois, image_shape, input_shape, 
+                results = self.bbox_util.forward(roi_cls_locs, roi_scores, rois, image_shape, input_shape,
                                                         nms_iou = self.nms_iou, confidence = self.confidence)
-                
+
         t2 = time.time()
         tact_time = (t2 - t1) / test_interval
         return tact_time
@@ -287,7 +293,7 @@ class FRCNN(object):
         #   代码仅仅支持RGB图像的预测，所有其它类型的图像都会转化成RGB
         #---------------------------------------------------------#
         image       = cvtColor(image)
-        
+
         #---------------------------------------------------------#
         #   给原图像进行resize，resize到短边为600的大小上
         #---------------------------------------------------------#
@@ -306,18 +312,18 @@ class FRCNN(object):
             #-------------------------------------------------------------#
             #   利用classifier的预测结果对建议框进行解码，获得预测框
             #-------------------------------------------------------------#
-            results = self.bbox_util.forward(roi_cls_locs, roi_scores, rois, image_shape, input_shape, 
+            results = self.bbox_util.forward(roi_cls_locs, roi_scores, rois, image_shape, input_shape,
                                                     nms_iou = self.nms_iou, confidence = self.confidence)
             #--------------------------------------#
             #   如果没有检测到物体，则返回原图
             #--------------------------------------#
             if len(results[0]) <= 0:
-                return 
+                return
 
             top_label   = np.array(results[0][:, 5], dtype = 'int32')
             top_conf    = results[0][:, 4]
             top_boxes   = results[0][:, :4]
-        
+
         for i, c in list(enumerate(top_label)):
             predicted_class = self.class_names[int(c)]
             box             = top_boxes[i]
@@ -330,4 +336,4 @@ class FRCNN(object):
             f.write("%s %s %s %s %s %s\n" % (predicted_class, score[:6], str(int(left)), str(int(top)), str(int(right)),str(int(bottom))))
 
         f.close()
-        return 
+        return

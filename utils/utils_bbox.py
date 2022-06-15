@@ -3,26 +3,46 @@ import torch
 from torch.nn import functional as F
 from torchvision.ops import nms
 
-
+#-----------------------------------#
+#   将RPN网络预测结果转化成尚未筛选的建议框
+#-----------------------------------#
 def loc2bbox(src_bbox, loc):
+    """
+    src_bbox: 先验框:x1,y1,x2,y2
+    loc:      先验框调整参数
+    return:   建议框:x1,y1,x2,y2
+    """
     if src_bbox.size()[0] == 0:
         return torch.zeros((0, 4), dtype=loc.dtype)
 
-    src_width   = torch.unsqueeze(src_bbox[:, 2] - src_bbox[:, 0], -1)
-    src_height  = torch.unsqueeze(src_bbox[:, 3] - src_bbox[:, 1], -1)
-    src_ctr_x   = torch.unsqueeze(src_bbox[:, 0], -1) + 0.5 * src_width
-    src_ctr_y   = torch.unsqueeze(src_bbox[:, 1], -1) + 0.5 * src_height
+    #-----------------------------------#
+    #   计算先验框宽高,中心
+    #-----------------------------------#
+    src_width   = torch.unsqueeze(src_bbox[:, 2] - src_bbox[:, 0], -1)      # x2-x1
+    src_height  = torch.unsqueeze(src_bbox[:, 3] - src_bbox[:, 1], -1)      # y2-y1
+    src_ctr_x   = torch.unsqueeze(src_bbox[:, 0], -1) + 0.5 * src_width     # x1+0.5w
+    src_ctr_y   = torch.unsqueeze(src_bbox[:, 1], -1) + 0.5 * src_height    # y1+0.5h
 
+    #-----------------------------------#
+    #   获取调整参数
+    #   每隔4个取一次
+    #-----------------------------------#
     dx          = loc[:, 0::4]
     dy          = loc[:, 1::4]
     dw          = loc[:, 2::4]
     dh          = loc[:, 3::4]
 
-    ctr_x = dx * src_width + src_ctr_x
+    #-----------------------------------#
+    #   调整先验框中心和宽高
+    #-----------------------------------#
+    ctr_x = dx * src_width  + src_ctr_x     # 中心调整就是 预测值*先验框宽高+先验框中心坐标
     ctr_y = dy * src_height + src_ctr_y
-    w = torch.exp(dw) * src_width
+    w = torch.exp(dw) * src_width           # 宽高调整就是 预测值的指数*先验框宽高
     h = torch.exp(dh) * src_height
 
+    #-----------------------------------#
+    #   将调整后的中心和宽高转换为左上角,右下角坐标
+    #-----------------------------------#
     dst_bbox = torch.zeros_like(loc)
     dst_bbox[:, 0::4] = ctr_x - 0.5 * w
     dst_bbox[:, 1::4] = ctr_y - 0.5 * h
@@ -31,10 +51,11 @@ def loc2bbox(src_bbox, loc):
 
     return dst_bbox
 
+"""建议框解码"""
 class DecodeBox():
     def __init__(self, std, num_classes):
         self.std            = std
-        self.num_classes    = num_classes + 1    
+        self.num_classes    = num_classes + 1
 
     def frcnn_correct_boxes(self, box_xy, box_wh, input_shape, image_shape):
         #-----------------------------------------------------------------#
@@ -52,6 +73,13 @@ class DecodeBox():
         return boxes
 
     def forward(self, roi_cls_locs, roi_scores, rois, image_shape, input_shape, nms_iou = 0.3, confidence = 0.5):
+        """
+        roi_cls_locs: 建议框的调整参数
+        roi_scores:   建议框的种类得分
+        rois:         建议框的坐标
+        image_shape:  原图大小
+        input_shape:  调整短边为600后的大小
+        """
         results = []
         bs      = len(roi_cls_locs)
         #--------------------------------#
@@ -63,7 +91,7 @@ class DecodeBox():
         #----------------------------------------------------------------------------------------------------------------#
         for i in range(bs):
             #----------------------------------------------------------#
-            #   对回归参数进行reshape
+            #   对回归参数进行reshape,改变回归参数数量级
             #----------------------------------------------------------#
             roi_cls_loc = roi_cls_locs[i] * self.std
             #----------------------------------------------------------#
@@ -77,6 +105,9 @@ class DecodeBox():
             #   num_rois, 4 -> num_rois, 1, 4 -> num_rois, num_classes, 4
             #-------------------------------------------------------------#
             roi         = rois[i].view((-1, 1, 4)).expand_as(roi_cls_loc)
+            #-------------------------------------------------------------#
+            #   loc2bbox: 对建议框进行调整获得预测框
+            #-------------------------------------------------------------#
             cls_bbox    = loc2bbox(roi.contiguous().view((-1, 4)), roi_cls_loc.contiguous().view((-1, 4)))
             cls_bbox    = cls_bbox.view([-1, (self.num_classes), 4])
             #-------------------------------------------------------------#
@@ -85,17 +116,21 @@ class DecodeBox():
             cls_bbox[..., [0, 2]] = (cls_bbox[..., [0, 2]]) / input_shape[1]
             cls_bbox[..., [1, 3]] = (cls_bbox[..., [1, 3]]) / input_shape[0]
 
+            #-------------------------------------------------------------#
+            #   取出建议框种类得分,并取softmax
+            #-------------------------------------------------------------#
             roi_score   = roi_scores[i]
             prob        = F.softmax(roi_score, dim=-1)
 
             results.append([])
+            # 从1开始,因为0代表了背景
             for c in range(1, self.num_classes):
                 #--------------------------------#
                 #   取出属于该类的所有框的置信度
                 #   判断是否大于门限
                 #--------------------------------#
                 c_confs     = prob[:, c]
-                c_confs_m   = c_confs > confidence
+                c_confs_m   = c_confs > confidence      # 返回 矩阵中为True/False
 
                 if len(c_confs[c_confs_m]) > 0:
                     #-----------------------------------------#
@@ -104,9 +139,12 @@ class DecodeBox():
                     boxes_to_process = cls_bbox[c_confs_m, c]
                     confs_to_process = c_confs[c_confs_m]
 
+                    #-----------------------------------------#
+                    #   非极大抑制
+                    #-----------------------------------------#
                     keep = nms(
-                        boxes_to_process,
-                        confs_to_process,
+                        boxes_to_process,   # 框的坐标x1,y1,x2,y2
+                        confs_to_process,   # 置信度
                         nms_iou
                     )
                     #-----------------------------------------#
@@ -122,10 +160,13 @@ class DecodeBox():
                     # 添加进result里
                     results[-1].extend(c_pred)
 
+            #-----------------------------------------#
+            # 调整为相对于原图的形式
+            #-----------------------------------------#
             if len(results[-1]) > 0:
                 results[-1] = np.array(results[-1])
                 box_xy, box_wh = (results[-1][:, 0:2] + results[-1][:, 2:4])/2, results[-1][:, 2:4] - results[-1][:, 0:2]
                 results[-1][:, :4] = self.frcnn_correct_boxes(box_xy, box_wh, input_shape, image_shape)
 
         return results
-        
+

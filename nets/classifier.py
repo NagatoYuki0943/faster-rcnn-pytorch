@@ -1,8 +1,13 @@
+"""
+分类器网络,图中右下角
+"""
+
+
 import warnings
 
 import torch
 from torch import nn
-from torchvision.ops import RoIPool
+from torchvision.ops import RoIPool # pytorch自带的rolpool
 
 warnings.filterwarnings("ignore")
 
@@ -25,7 +30,7 @@ class VGG16RoIHead(nn.Module):
         normal_init(self.score, 0, 0.01)
 
         self.roi = RoIPool((roi_size, roi_size), spatial_scale)
-        
+
     def forward(self, x, rois, roi_indices, img_size):
         n, _, _, _ = x.shape
         if x.is_cuda:
@@ -59,16 +64,27 @@ class VGG16RoIHead(nn.Module):
         roi_scores      = roi_scores.view(n, -1, roi_scores.size(1))
         return roi_cls_locs, roi_scores
 
+#------------------------------#
+# 	分类器网络
+#------------------------------#
 class Resnet50RoIHead(nn.Module):
     def __init__(self, n_class, roi_size, spatial_scale, classifier):
+        """
+        n_class:    num_class+1  分类数+是否包含物体
+        roi_size:   roi后图像宽高 14
+        classifier: vgg16/resnet的最后分类部分 resnet的layer4和avgpool
+        """
         super(Resnet50RoIHead, self).__init__()
+
         self.classifier = classifier
         #--------------------------------------#
         #   对ROIPooling后的的结果进行回归预测
+        #   [300, 2048] => [300, (num_class+1)*4]
         #--------------------------------------#
         self.cls_loc = nn.Linear(2048, n_class * 4)
         #-----------------------------------#
         #   对ROIPooling后的的结果进行分类
+        #   [300, 2048] => [300, num_class+1]
         #-----------------------------------#
         self.score = nn.Linear(2048, n_class)
         #-----------------------------------#
@@ -77,9 +93,20 @@ class Resnet50RoIHead(nn.Module):
         normal_init(self.cls_loc, 0, 0.001)
         normal_init(self.score, 0, 0.01)
 
+        #--------------------------------------#
+        #   ROIPooling: 将大小不同的图像转换为相同大小
+        #--------------------------------------#
         self.roi = RoIPool((roi_size, roi_size), spatial_scale)
 
     def forward(self, x, rois, roi_indices, img_size):
+        """
+        x: 共享特征层 [1,1024,38,38]
+        rois: 建议框 前300个
+        roi_indices: 建议框序号 [300]
+        img_size: 
+        """
+
+        """图中ROIPooling"""
         n, _, _, _ = x.shape
         if x.is_cuda:
             roi_indices = roi_indices.cuda()
@@ -94,21 +121,37 @@ class Resnet50RoIHead(nn.Module):
         indices_and_rois = torch.cat([roi_indices[:, None], rois_feature_map], dim=1)
         #-----------------------------------#
         #   利用建议框对公用特征层进行截取
+        #   pool: [300,1024,14,14] 300个建议框,1024是通道数,14是roi将图像分为14x14块
+        #   300个调整后的局部特征层
         #-----------------------------------#
         pool = self.roi(x, indices_and_rois)
-        #-----------------------------------#
-        #   利用classifier网络进行特征提取
-        #-----------------------------------#
-        fc7 = self.classifier(pool)
+
+        """图中右下角分类部分"""
         #--------------------------------------------------------------#
+        #   利用classifier网络进行特征提取 classifier包含layer4和avgpool
+        #   输出: [300, 2048, 1, 1]
+        fc7 = self.classifier(pool)
         #   当输入为一张图片的时候，这里获得的f7的shape为[300, 2048]
         #--------------------------------------------------------------#
         fc7 = fc7.view(fc7.size(0), -1)
 
+        #--------------------------------------#
+        #   对ROIPooling后的的结果进行回归预测
+        #   [300, 2048] => [300, (num_class+1)*4]
+        #--------------------------------------#
         roi_cls_locs    = self.cls_loc(fc7)
+
+        #-----------------------------------#
+        #   对ROIPooling后的的结果进行分类
+        #   [300, 2048] => [300, num_class+1]
+        #-----------------------------------#
         roi_scores      = self.score(fc7)
+        # [300, 9*4] => [b, 300, (num_class+1)*4]   前面300假设只有一张图片
         roi_cls_locs    = roi_cls_locs.view(n, -1, roi_cls_locs.size(1))
+        # [300, 9]   => [b, 300, num_class+1]       前面300假设只有一张图片
         roi_scores      = roi_scores.view(n, -1, roi_scores.size(1))
+
+        # 建议框的调整参数,建议框的种类得分
         return roi_cls_locs, roi_scores
 
 def normal_init(m, mean, stddev, truncated=False):

@@ -1,3 +1,7 @@
+"""
+自己的数据集一定要修改 classes_path
+"""
+
 #-------------------------------------#
 #       对数据集进行训练
 #-------------------------------------#
@@ -30,7 +34,7 @@ from utils.utils_fit import fit_one_epoch
 2、损失值的大小用于判断是否收敛，比较重要的是有收敛的趋势，即验证集损失不断下降，如果验证集损失基本上不改变的话，模型基本上就收敛了。
    损失值的具体大小并没有什么意义，大和小只在于损失的计算方式，并不是接近于0才好。如果想要让损失好看点，可以直接到对应的损失函数里面除上10000。
    训练过程中的损失值会保存在logs文件夹下的loss_%Y_%m_%d_%H_%M_%S文件夹中
-   
+
 3、训练好的权值文件保存在logs文件夹中，每个训练世代（Epoch）包含若干训练步长（Step），每个训练步长（Step）进行一次梯度下降。
    如果只是训练了几个Step是不会保存的，Epoch和Step的概念要捋清楚一下。
 '''
@@ -52,7 +56,7 @@ if __name__ == "__main__":
     #---------------------------------------------------------------------#
     fp16            = False
     #---------------------------------------------------------------------#
-    #   classes_path    指向model_data下的txt，与自己训练的数据集相关 
+    #   classes_path    指向model_data下的txt，与自己训练的数据集相关
     #                   训练前一定要修改classes_path，使其对应自己的数据集
     #---------------------------------------------------------------------#
     classes_path    = 'model_data/voc_classes.txt'
@@ -63,13 +67,13 @@ if __name__ == "__main__":
     #
     #   如果训练过程中存在中断训练的操作，可以将model_path设置成logs文件夹下的权值文件，将已经训练了一部分的权值再次载入。
     #   同时修改下方的 冻结阶段 或者 解冻阶段 的参数，来保证模型epoch的连续性。
-    #   
+    #
     #   当model_path = ''的时候不加载整个模型的权值。
     #
     #   此处使用的是整个模型的权重，因此是在train.py进行加载的，下面的pretrain不影响此处的权值加载。
     #   如果想要让模型从主干的预训练权值开始训练，则设置model_path = ''，下面的pretrain = True，此时仅加载主干。
     #   如果想要让模型从0开始训练，则设置model_path = ''，下面的pretrain = Fasle，Freeze_Train = Fasle，此时从0开始训练，且没有冻结主干的过程。
-    #   
+    #
     #   一般来讲，网络从0开始的训练效果会很差，因为权值太过随机，特征提取效果不明显，因此非常、非常、非常不建议大家从0开始训练！
     #   如果一定要从0开始，可以了解imagenet数据集，首先训练分类模型，获得网络的主干部分权值，分类模型的 主干部分 和该模型通用，基于此进行训练。
     #----------------------------------------------------------------------------------------------------------------------------#
@@ -94,8 +98,8 @@ if __name__ == "__main__":
     #   anchors_size用于设定先验框的大小，每个特征点均存在9个先验框。
     #   anchors_size每个数对应3个先验框。
     #   当anchors_size = [8, 16, 32]的时候，生成的先验框宽高约为：
-    #   [90, 180] ; [180, 360]; [360, 720]; [128, 128]; 
-    #   [256, 256]; [512, 512]; [180, 90] ; [360, 180]; 
+    #   [90, 180] ; [180, 360]; [360, 720]; [128, 128];
+    #   [256, 256]; [512, 512]; [180, 90] ; [360, 180];
     #   [720, 360]; 详情查看anchors.py
     #   如果想要检测小物体，可以减小anchors_size靠前的数。
     #   比如设置anchors_size = [4, 16, 32]
@@ -105,9 +109,9 @@ if __name__ == "__main__":
     #----------------------------------------------------------------------------------------------------------------------------#
     #   训练分为两个阶段，分别是冻结阶段和解冻阶段。设置冻结阶段是为了满足机器性能不足的同学的训练需求。
     #   冻结训练需要的显存较小，显卡非常差的情况下，可设置Freeze_Epoch等于UnFreeze_Epoch，此时仅仅进行冻结训练。
-    #      
+    #
     #   在此提供若干参数设置建议，各位训练者根据自己的需求进行灵活调整：
-    #   （一）从整个模型的预训练权重开始训练： 
+    #   （一）从整个模型的预训练权重开始训练：
     #       Adam：
     #           Init_Epoch = 0，Freeze_Epoch = 50，UnFreeze_Epoch = 100，Freeze_Train = True，optimizer_type = 'adam'，Init_lr = 1e-4。（冻结）
     #           Init_Epoch = 0，UnFreeze_Epoch = 100，Freeze_Train = False，optimizer_type = 'adam'，Init_lr = 1e-4。（不冻结）
@@ -162,7 +166,7 @@ if __name__ == "__main__":
     #                   如果设置Freeze_Train=False，建议使用优化器为sgd
     #------------------------------------------------------------------#
     Freeze_Train        = True
-    
+
     #------------------------------------------------------------------#
     #   其它训练参数：学习率、优化器、学习率下降有关
     #------------------------------------------------------------------#
@@ -219,7 +223,7 @@ if __name__ == "__main__":
     #----------------------------------------------------#
     train_annotation_path   = '2007_train.txt'
     val_annotation_path     = '2007_val.txt'
-    
+
     #----------------------------------------------------#
     #   获取classes和anchor
     #----------------------------------------------------#
@@ -231,7 +235,7 @@ if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"]  = ','.join(str(x) for x in train_gpu)
     ngpus_per_node                      = len(train_gpu)
     print('Number of devices: {}'.format(ngpus_per_node))
-    
+
     model = FasterRCNN(num_classes, anchor_scales = anchors_size, backbone = backbone, pretrained = pretrained)
     if not pretrained:
         weights_init(model)
@@ -240,7 +244,7 @@ if __name__ == "__main__":
         #   权值文件请看README，百度网盘下载
         #------------------------------------------------------#
         print('Load weights {}.'.format(model_path))
-        
+
         #------------------------------------------------------#
         #   根据预训练权重的Key和模型的Key进行加载
         #------------------------------------------------------#
@@ -295,7 +299,7 @@ if __name__ == "__main__":
         val_lines   = f.readlines()
     num_train   = len(train_lines)
     num_val     = len(val_lines)
-    
+
     show_config(
         classes_path = classes_path, model_path = model_path, input_shape = input_shape, \
         Init_Epoch = Init_Epoch, Freeze_Epoch = Freeze_Epoch, UnFreeze_Epoch = UnFreeze_Epoch, Freeze_batch_size = Freeze_batch_size, Unfreeze_batch_size = Unfreeze_batch_size, Freeze_Train = Freeze_Train, \
@@ -304,7 +308,7 @@ if __name__ == "__main__":
     )
     #---------------------------------------------------------#
     #   总训练世代指的是遍历全部数据的总次数
-    #   总训练步长指的是梯度下降的总次数 
+    #   总训练步长指的是梯度下降的总次数
     #   每个训练世代包含若干训练步长，每个训练步长进行一次梯度下降。
     #   此处仅建议最低训练世代，上不封顶，计算时只考虑了解冻部分
     #----------------------------------------------------------#
@@ -352,7 +356,7 @@ if __name__ == "__main__":
         lr_limit_min    = 1e-4 if optimizer_type == 'adam' else 5e-4
         Init_lr_fit     = min(max(batch_size / nbs * Init_lr, lr_limit_min), lr_limit_max)
         Min_lr_fit      = min(max(batch_size / nbs * Min_lr, lr_limit_min * 1e-2), lr_limit_max * 1e-2)
-        
+
         #---------------------------------------#
         #   根据optimizer_type选择优化器
         #---------------------------------------#
@@ -365,7 +369,7 @@ if __name__ == "__main__":
         #   获得学习率下降的公式
         #---------------------------------------#
         lr_scheduler_func = get_lr_scheduler(lr_decay_type, Init_lr_fit, Min_lr_fit, UnFreeze_Epoch)
-        
+
         #---------------------------------------#
         #   判断每一个世代的长度
         #---------------------------------------#
@@ -413,7 +417,7 @@ if __name__ == "__main__":
                 #   获得学习率下降的公式
                 #---------------------------------------#
                 lr_scheduler_func = get_lr_scheduler(lr_decay_type, Init_lr_fit, Min_lr_fit, UnFreeze_Epoch)
-                
+
                 for param in model.extractor.parameters():
                     param.requires_grad = True
                 # ------------------------------------#
@@ -427,15 +431,15 @@ if __name__ == "__main__":
                 if epoch_step == 0 or epoch_step_val == 0:
                     raise ValueError("数据集过小，无法继续进行训练，请扩充数据集。")
 
-                gen             = DataLoader(train_dataset, shuffle = True, batch_size = batch_size, num_workers = num_workers, pin_memory=True,
+                gen     = DataLoader(train_dataset, shuffle = True, batch_size = batch_size, num_workers = num_workers, pin_memory=True,
                                             drop_last=True, collate_fn=frcnn_dataset_collate)
-                gen_val         = DataLoader(val_dataset  , shuffle = True, batch_size = batch_size, num_workers = num_workers, pin_memory=True, 
+                gen_val = DataLoader(val_dataset  , shuffle = True, batch_size = batch_size, num_workers = num_workers, pin_memory=True, 
                                             drop_last=True, collate_fn=frcnn_dataset_collate)
 
                 UnFreeze_flag = True
-                
+
             set_optimizer_lr(optimizer, lr_scheduler_func, epoch)
-            
+
             fit_one_epoch(model, train_util, loss_history, eval_callback, optimizer, epoch, epoch_step, epoch_step_val, gen, gen_val, UnFreeze_Epoch, Cuda, fp16, scaler, save_period, save_dir)
-            
+
         loss_history.writer.close()

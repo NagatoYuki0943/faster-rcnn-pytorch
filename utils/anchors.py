@@ -1,7 +1,12 @@
+"""
+框的示例
+"""
+
 import numpy as np
 
 #--------------------------------------------#
 #   生成基础的先验框
+#   三个竖着的长方形,三个正方形,三个横着的正方形
 #--------------------------------------------#
 def generate_anchor_base(base_size=16, ratios=[0.5, 1, 2], anchor_scales=[8, 16, 32]):
     anchor_base = np.zeros((len(ratios) * len(anchor_scales), 4), dtype=np.float32)
@@ -21,6 +26,10 @@ def generate_anchor_base(base_size=16, ratios=[0.5, 1, 2], anchor_scales=[8, 16,
 #   对基础先验框进行拓展对应到所有特征点上
 #--------------------------------------------#
 def _enumerate_shifted_anchor(anchor_base, feat_stride, height, width):
+    """
+    feat_stride:步长
+    height,width: 共享特征层的宽高
+    """
     #---------------------------------#
     #   计算网格中心点
     #---------------------------------#
@@ -40,7 +49,7 @@ def _enumerate_shifted_anchor(anchor_base, feat_stride, height, width):
     #---------------------------------#
     anchor  = anchor.reshape((K * A, 4)).astype(np.float32)
     return anchor
-    
+
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     nine_anchors = generate_anchor_base()
@@ -49,18 +58,18 @@ if __name__ == "__main__":
     height, width, feat_stride  = 38,38,16
     anchors_all                 = _enumerate_shifted_anchor(nine_anchors, feat_stride, height, width)
     print(np.shape(anchors_all))
-    
-    fig     = plt.figure()
-    ax      = fig.add_subplot(111)
+
+    fig     = plt.figure(figsize=(9, 9))
+    ax      = fig.add_subplot(111)  # 1行1列第1个
     plt.ylim(-300,900)
     plt.xlim(-300,900)
-    shift_x = np.arange(0, width * feat_stride, feat_stride)
+    shift_x = np.arange(0, width * feat_stride,  feat_stride)
     shift_y = np.arange(0, height * feat_stride, feat_stride)
     shift_x, shift_y = np.meshgrid(shift_x, shift_y)
     plt.scatter(shift_x,shift_y)
     box_widths  = anchors_all[:,2]-anchors_all[:,0]
     box_heights = anchors_all[:,3]-anchors_all[:,1]
-    
+
     for i in [108, 109, 110, 111, 112, 113, 114, 115, 116]:
         rect = plt.Rectangle([anchors_all[i, 0],anchors_all[i, 1]],box_widths[i],box_heights[i],color="r",fill=False)
         ax.add_patch(rect)
