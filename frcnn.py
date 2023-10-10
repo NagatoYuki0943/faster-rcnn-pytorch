@@ -34,7 +34,7 @@ class FRCNN(object):
         #   验证集损失较低不代表mAP较高，仅代表该权值在验证集上泛化性能较好。
         #   如果出现shape不匹配，同时要注意训练时的model_path和classes_path参数的修改
         #--------------------------------------------------------------------------#
-        "model_path"    : 'logs/ep043-loss0.767-val_loss0.803.pth',
+        "model_path"    : 'model_data/voc_weights_resnet.pth',
         "classes_path"  : 'model_data/voc_classes.txt',
         #---------------------------------------------------------------------#
         #   网络的主干特征提取网络，resnet50或者vgg
@@ -73,7 +73,7 @@ class FRCNN(object):
         self.__dict__.update(self._defaults)
         for name, value in kwargs.items():
             setattr(self, name, value)
-            self._defaults[name] = value 
+            self._defaults[name] = value
         #---------------------------------------------------#
         #   获得种类和先验框的数量
         #---------------------------------------------------#
@@ -116,7 +116,7 @@ class FRCNN(object):
     #---------------------------------------------------#
     def detect_image(self, image, crop = False, count = False):
         #---------------------------------------------------#
-        #   计算输入图片的高和宽
+        #   计算输入图片的高和宽 [H, W]
         #---------------------------------------------------#
         image_shape = np.array(np.shape(image)[0:2])
         #---------------------------------------------------#
@@ -143,13 +143,19 @@ class FRCNN(object):
                 images = images.cuda()
 
             #-------------------------------------------------------------#
-            #   roi_cls_locs: 建议框的调整参数
-            #   roi_scores:   建议框的种类得分
-            #   rois:         建议框的坐标
+            #   roi_cls_locs: 建议框的调整参数  [B, 300, (num_classes+1)*4]  针对每个类别都预测一个框,和yolo只预测1个框和这个框的种类不同
+            #   roi_scores:   建议框的种类得分  [B, 300, num_classes+1]
+            #   rois:         建议框的坐标      [B, 300, 4]
             #-------------------------------------------------------------#
             roi_cls_locs, roi_scores, rois, _ = self.net(images)
             #-------------------------------------------------------------#
             #   利用classifier的预测结果对建议框进行解码和非极大抑制，获得预测框
+            #   results = [ 每张图片
+            #               [ 每种类别
+            #                  [x1, y1, x2, y2, confs(置信度), labels(种类预测值)],
+            #                   ...
+            #               ]
+            #             ]
             #-------------------------------------------------------------#
             results = self.bbox_util.forward(roi_cls_locs, roi_scores, rois, image_shape, input_shape,
                                                     nms_iou = self.nms_iou, confidence = self.confidence)

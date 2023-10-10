@@ -70,7 +70,7 @@ class VGG16RoIHead(nn.Module):
 class Resnet50RoIHead(nn.Module):
     def __init__(self, n_class, roi_size, spatial_scale, classifier):
         """
-        n_class:    num_class+1  分类数+是否包含物体
+        n_class:    num_classes+1  分类数+是否包含物体
         roi_size:   roi后图像宽高 14
         classifier: vgg16/resnet的最后分类部分 resnet的layer4和avgpool
         """
@@ -79,12 +79,12 @@ class Resnet50RoIHead(nn.Module):
         self.classifier = classifier
         #--------------------------------------#
         #   对ROIPooling后的的结果进行回归预测
-        #   [300, 2048] => [300, (num_class+1)*4]
+        #   [B*300, 2048] => [B*300, (num_classes+1)*4]
         #--------------------------------------#
         self.cls_loc = nn.Linear(2048, n_class * 4)
         #-----------------------------------#
         #   对ROIPooling后的的结果进行分类
-        #   [300, 2048] => [300, num_class+1]
+        #   [B*300, 2048] => [B*300, num_classes+1]
         #-----------------------------------#
         self.score = nn.Linear(2048, n_class)
         #-----------------------------------#
@@ -100,10 +100,10 @@ class Resnet50RoIHead(nn.Module):
 
     def forward(self, x, rois, roi_indices, img_size):
         """
-        x: 共享特征层 [1,1024,38,38]
-        rois: 建议框 前300个
-        roi_indices: 建议框序号 [300]
-        img_size: 
+        x:           共享特征层 [B, 1024, 38, 38]
+        rois:        建议框     [B, 300, 4]
+        roi_indices: 建议框序号  [B, 300]
+        img_size:    [H, W]     [600, 600]
         """
 
         """图中ROIPooling"""
@@ -111,47 +111,50 @@ class Resnet50RoIHead(nn.Module):
         if x.is_cuda:
             roi_indices = roi_indices.cuda()
             rois = rois.cuda()
-        rois        = torch.flatten(rois, 0, 1)
-        roi_indices = torch.flatten(roi_indices, 0, 1)
-        
-        rois_feature_map = torch.zeros_like(rois)
-        rois_feature_map[:, [0,2]] = rois[:, [0,2]] / img_size[1] * x.size()[3]
+        rois        = torch.flatten(rois, 0, 1)         # [B, 300, 4] -> [B*300, 4]
+        roi_indices = torch.flatten(roi_indices, 0, 1)  # [B, 300] -> [B*300]
+
+        rois_feature_map = torch.zeros_like(rois)                               # [B*300, 4]
+        rois_feature_map[:, [0,2]] = rois[:, [0,2]] / img_size[1] * x.size()[3] # 将rois先归一化再调整为共享特征层的大小
         rois_feature_map[:, [1,3]] = rois[:, [1,3]] / img_size[0] * x.size()[2]
 
+        # 拼接id和坐标
+        # ([B*300] -> [B*300, 1]) cat [B*300, 4] = [B*300, 5]
         indices_and_rois = torch.cat([roi_indices[:, None], rois_feature_map], dim=1)
+
         #-----------------------------------#
         #   利用建议框对公用特征层进行截取
-        #   pool: [300,1024,14,14] 300个建议框,1024是通道数,14是roi将图像分为14x14块
-        #   300个调整后的局部特征层
+        #   [B, 1024, 38, 38] & [B*300, 5] -> [B*300, 1024, 14, 14]
+        #   300个建议框,1024是通道数,14是roi将图像分为14x14块
         #-----------------------------------#
         pool = self.roi(x, indices_and_rois)
 
         """图中右下角分类部分"""
         #--------------------------------------------------------------#
         #   利用classifier网络进行特征提取 classifier包含layer4和avgpool
-        #   输出: [300, 2048, 1, 1]
+        #   [B*300, 1024, 14, 14] -> [B*300, 2048, 1, 1]
+        #--------------------------------------------------------------#
         fc7 = self.classifier(pool)
-        #   当输入为一张图片的时候，这里获得的f7的shape为[300, 2048]
+        #--------------------------------------------------------------#
+        #   当输入为一张图片的时候，这里获得的f7的shape为[B*300, 2048]
+        #   [B*300, 2048, 1, 1] -> [B*300, 2048]
         #--------------------------------------------------------------#
         fc7 = fc7.view(fc7.size(0), -1)
 
         #--------------------------------------#
         #   对ROIPooling后的的结果进行回归预测
-        #   [300, 2048] => [300, (num_class+1)*4]
         #--------------------------------------#
-        roi_cls_locs    = self.cls_loc(fc7)
+        roi_cls_locs    = self.cls_loc(fc7)                                 # [B*300, 2048]            => [B*300, (num_classes+1)*4]  4: xywh  针对每个类别都预测一个框,和yolo只预测1个框和这个框的种类不同
+        roi_cls_locs    = roi_cls_locs.view(n, -1, roi_cls_locs.size(1))    # [B*300, (num_classes+1)*4] => [B, 300, (num_classes+1)*4]
 
         #-----------------------------------#
         #   对ROIPooling后的的结果进行分类
-        #   [300, 2048] => [300, num_class+1]
         #-----------------------------------#
-        roi_scores      = self.score(fc7)
-        # [300, 9*4] => [b, 300, (num_class+1)*4]   前面300假设只有一张图片
-        roi_cls_locs    = roi_cls_locs.view(n, -1, roi_cls_locs.size(1))
-        # [300, 9]   => [b, 300, num_class+1]       前面300假设只有一张图片
-        roi_scores      = roi_scores.view(n, -1, roi_scores.size(1))
+        roi_scores      = self.score(fc7)                                   # [B*300, 2048]        => [B*300, num_classes+1]
+        roi_scores      = roi_scores.view(n, -1, roi_scores.size(1))        # [B*300, num_classes+1] => [B, 300, num_classes+1]
 
-        # 建议框的调整参数,建议框的种类得分
+        # roi_cls_locs: [B, 300, (num_classes+1)*4]   针对每个类别都预测一个框,和yolo只预测1个框和这个框的种类不同
+        # roi_scores:   [B, 300, num_classes+1]
         return roi_cls_locs, roi_scores
 
 def normal_init(m, mean, stddev, truncated=False):
