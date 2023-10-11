@@ -102,8 +102,8 @@ class Resnet50RoIHead(nn.Module):
         """
         x:           共享特征层 [B, 1024, 38, 38]
         rois:        建议框     [B, 300, 4]
-        roi_indices: 建议框序号  [B, 300]
-        img_size:    [H, W]     [600, 600]
+        roi_indices: 建议框序号 [B, 300]
+        img_size:    [H, W]    [600, 600]
         """
 
         """图中ROIPooling"""
@@ -144,16 +144,16 @@ class Resnet50RoIHead(nn.Module):
         #--------------------------------------#
         #   对ROIPooling后的的结果进行回归预测
         #--------------------------------------#
-        roi_cls_locs    = self.cls_loc(fc7)                                 # [B*300, 2048]            => [B*300, (num_classes+1)*4]  4: xywh  针对每个类别都预测一个框,和yolo只预测1个框和这个框的种类不同
-        roi_cls_locs    = roi_cls_locs.view(n, -1, roi_cls_locs.size(1))    # [B*300, (num_classes+1)*4] => [B, 300, (num_classes+1)*4]
+        roi_cls_locs    = self.cls_loc(fc7)                                 # [B*300, 2048] -> [B*300, (num_classes+1)*4]  4: xywh  针对每个类别都预测一个框的调整值,和yolo只预测1个框和这个框的种类不同
+        roi_cls_locs    = roi_cls_locs.view(n, -1, roi_cls_locs.size(1))    # [B*300, (num_classes+1)*4] -> [B, 300, (num_classes+1)*4]
 
         #-----------------------------------#
         #   对ROIPooling后的的结果进行分类
         #-----------------------------------#
-        roi_scores      = self.score(fc7)                                   # [B*300, 2048]        => [B*300, num_classes+1]
-        roi_scores      = roi_scores.view(n, -1, roi_scores.size(1))        # [B*300, num_classes+1] => [B, 300, num_classes+1]
+        roi_scores      = self.score(fc7)                                   # [B*300, 2048] -> [B*300, num_classes+1]
+        roi_scores      = roi_scores.view(n, -1, roi_scores.size(1))        # [B*300, num_classes+1] -> [B, 300, num_classes+1]
 
-        # roi_cls_locs: [B, 300, (num_classes+1)*4]   针对每个类别都预测一个框,和yolo只预测1个框和这个框的种类不同
+        # roi_cls_locs: [B, 300, (num_classes+1)*4]   针对每个类别都预测一个框的调整值,和yolo只预测1个框和这个框的种类不同
         # roi_scores:   [B, 300, num_classes+1]
         return roi_cls_locs, roi_scores
 

@@ -48,7 +48,7 @@ class ProposalCreator():
         self.min_size           = min_size
 
     def __call__(self, loc, score, anchor, img_size, scale=1.):
-        """_summary_
+        """
 
         Args:
             loc (Tensor): 先验框调整参数        [12996, 4]
@@ -64,18 +64,18 @@ class ProposalCreator():
             n_pre_nms   = self.n_train_pre_nms
             n_post_nms  = self.n_train_post_nms
         else:
-            n_pre_nms   = self.n_test_pre_nms
-            n_post_nms  = self.n_test_post_nms
+            n_pre_nms   = self.n_test_pre_nms   # 3000
+            n_post_nms  = self.n_test_post_nms  # 300
 
         #-----------------------------------#
         #   将先验框转换成tensor
         #-----------------------------------#
-        anchor = torch.from_numpy(anchor).type_as(loc)
+        anchor = torch.from_numpy(anchor).type_as(loc)  # [12996, 4]
         #-----------------------------------#
         #   将RPN网络预测结果转化成尚未筛选的建议框
         #   get xyxy
         #-----------------------------------#
-        roi = loc2bbox(anchor, loc)
+        roi = loc2bbox(anchor, loc)                     # [12996, 4]
         #-----------------------------------#
         #   防止建议框超出图像边缘
         #-----------------------------------#
@@ -166,23 +166,24 @@ class RegionProposalNetwork(nn.Module):
 
     def forward(self, x, img_size, scale=1.):
         """
-        x: base_feature共享特征层
-        img_size: 原图大小 [H, W]
+        x: base_feature共享特征层 [B, 1024, 38, 38]
+        img_size: 输入图片大小    [H, W] [600, 600]
         """
         n, _, h, w = x.shape
         #-----------------------------------------#
-        #   先进行一个3x3的卷积，可理解为特征整合
+        #   先进行一个3x3Conv，可理解为特征整合
+        #   [B, 1024, 38, 38] -> [B, 512, 38, 38]
         #-----------------------------------------#
         x = F.relu(self.conv1(x))
         #-----------------------------------------#
-        #   回归预测对先验框进行调整
-        #   [B, C, H, W] -> [B, 36, H, W] -> [B, H, W, 36] -> [B, H*W*9, 4]  H*W*9代表每一个先验框
+        #   1x1Conv回归预测对先验框进行调整
+        #   [B, 512, 38, 38] -> [B, 36, 38, 38] -> [B, 38, 38, 36] -> [B, 38*38*9, 4]   38*38*9 = 12996
         #-----------------------------------------#
         rpn_locs = self.loc(x)
         rpn_locs = rpn_locs.permute(0, 2, 3, 1).contiguous().view(n, -1, 4)
         #-----------------------------------------#
-        #   分类预测先验框内部是否包含物体
-        #   [B, C, H, W] -> [B, 18, H, W] -> [B, H, W, 18] -> [B, H*W*9, 2]  H*W*9代表每一个先验框
+        #   1x1Conv分类预测先验框内部是否包含物体
+        #   [B, 512, 38, 38] -> [B, 18, 38, 38] -> [B, 38, 38, 18] -> [B, 38*38*9, 2]   38*38*9 = 12996
         #-----------------------------------------#
         rpn_scores = self.score(x)
         rpn_scores = rpn_scores.permute(0, 2, 3, 1).contiguous().view(n, -1, 2)
@@ -190,16 +191,16 @@ class RegionProposalNetwork(nn.Module):
         #--------------------------------------------------------------------------------------#
         #   获得先验框得分
         #   进行softmax概率计算，每个先验框只有两个判别结果  softmax变化到0~1之间,和为1
-        #   rpn_scores: [B, H*W*9, 2]  [:, :, 1] 取最后一维的最后一个
+        #   rpn_scores: [B, 38*38*9, 2]  [:, :, 1] 取最后一维的最后一个
         #   内部包含物体或者内部不包含物体，rpn_softmax_scores[:, :, 1]的内容为包含物体的概率
         #--------------------------------------------------------------------------------------#
-        rpn_softmax_scores  = F.softmax(rpn_scores, dim=-1)
-        rpn_fg_scores       = rpn_softmax_scores[:, :, 1].contiguous()
-        rpn_fg_scores       = rpn_fg_scores.view(n, -1)     # n指的是n张图片    [B, H*W*9, 1] -> [B, H*W*9]
+        rpn_softmax_scores  = F.softmax(rpn_scores, dim=-1)             # [B, 38*38*9, 2] -> [B, 38*38*9, 2]
+        rpn_fg_scores       = rpn_softmax_scores[:, :, 1].contiguous()  # [B, 38*38*9, 2] get [B, 38*38*9]
+        # rpn_fg_scores     = rpn_fg_scores.view(n, -1)                 # [B, 38*38*9] -> [B, 38*38*9] 无用
 
         #------------------------------------------------------------------------------------------------#
         #   生成先验框，此时获得的anchor是布满网格点的
-        #   当输入图片为600x600x3的时候，公用特征层的shape就是38x38x1024，anchor的shape为[12996, 4]
+        #   当输入图片为600x600x3的时候，公用特征层的shape就是38x38x1024，anchor的shape为 [12996, 4]
         #------------------------------------------------------------------------------------------------#
         anchor = _enumerate_shifted_anchor(np.array(self.anchor_base), self.feat_stride, h, w)
 

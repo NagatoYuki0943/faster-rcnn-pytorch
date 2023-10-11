@@ -81,22 +81,22 @@ class FasterRCNN(nn.Module):
             #   利用主干网络提取特征
             #   [B, 3, 600, 600] -> [B, 1024, 38, 38]
             #---------------------------------#
-            base_feature    = self.extractor.forward(x)
+            base_feature    = self.extractor(x)
 
             #---------------------------------#
             #   获得建议框
             #   [B, 1024, 38, 38] -> rois:        [B, 300, 4]
             #                        roi_indices: [B, 300]
             #---------------------------------#
-            _, _, rois, roi_indices, _  = self.rpn.forward(base_feature, img_size, scale)
+            _, _, rois, roi_indices, _  = self.rpn(base_feature, img_size, scale)
             #---------------------------------------#
             #   获得classifier的分类结果和回归结果
-            #   rois:        [B, 300, 4] -> roi_cls_locs: [B, 300, (num_classes+1)*4]  针对每个类别都预测一个框,和yolo只预测1个框和这个框的种类不同
+            #   rois:        [B, 300, 4] -> roi_cls_locs: [B, 300, (num_classes+1)*4]  针对每个类别都预测一个框的调整值,和yolo只预测1个框和这个框的种类不同
             #   roi_indices: [B, 300]       roi_scores:   [B, 300, num_classes+1]
             #---------------------------------------#
-            roi_cls_locs, roi_scores    = self.head.forward(base_feature, rois, roi_indices, img_size)
+            roi_cls_locs, roi_scores    = self.head(base_feature, rois, roi_indices, img_size)
 
-            # roi_cls_locs: 建议框的调整参数  [B, 300, (num_classes+1)*4]  针对每个类别都预测一个框,和yolo只预测1个框和这个框的种类不同
+            # roi_cls_locs: 建议框的调整参数  [B, 300, (num_classes+1)*4]  针对每个类别都预测一个框的调整值,和yolo只预测1个框和这个框的种类不同
             # roi_scores:   建议框的种类得分  [B, 300, num_classes+1]
             # rois:         建议框的坐标      [B, 300, 4]
             # roi_indices:  建议框的index    [B, 300]
@@ -105,21 +105,21 @@ class FasterRCNN(nn.Module):
             #---------------------------------#
             #   利用主干网络提取特征
             #---------------------------------#
-            base_feature    = self.extractor.forward(x)
+            base_feature    = self.extractor(x)
             return base_feature
         elif mode == "rpn":
             base_feature, img_size = x
             #---------------------------------#
             #   获得建议框
             #---------------------------------#
-            rpn_locs, rpn_scores, rois, roi_indices, anchor = self.rpn.forward(base_feature, img_size, scale)
+            rpn_locs, rpn_scores, rois, roi_indices, anchor = self.rpn(base_feature, img_size, scale)
             return rpn_locs, rpn_scores, rois, roi_indices, anchor
         elif mode == "head":
             base_feature, rois, roi_indices, img_size = x
             #---------------------------------------#
             #   获得classifier的分类结果和回归结果
             #---------------------------------------#
-            roi_cls_locs, roi_scores    = self.head.forward(base_feature, rois, roi_indices, img_size)
+            roi_cls_locs, roi_scores    = self.head(base_feature, rois, roi_indices, img_size)
             return roi_cls_locs, roi_scores
 
     def freeze_bn(self):

@@ -8,29 +8,33 @@ from torchvision.ops import nms
 #-----------------------------------#
 def loc2bbox(src_bbox, loc):
     """
-    src_bbox: 先验框:xyxy
-    loc:      先验框调整参数
-    return:   建议框:xyxy
+    Args:
+        src_bbox (Tensor):      先验框:xyxy   [bbox_num, 4]
+        loc (Tensor, optional): 先验框调整参数 [bbox_num, 4]
+
+    Returns:
+        Tensor: 建议框: xyxy  [bbox_num, 4]
     """
     if src_bbox.size()[0] == 0:
         return torch.zeros((0, 4), dtype=loc.dtype)
 
     #-----------------------------------#
     #   计算先验框宽高,中心
+    #   xyxy2cxcywh
     #-----------------------------------#
-    src_width   = torch.unsqueeze(src_bbox[:, 2] - src_bbox[:, 0], -1)      # x2-x1
-    src_height  = torch.unsqueeze(src_bbox[:, 3] - src_bbox[:, 1], -1)      # y2-y1
-    src_ctr_x   = torch.unsqueeze(src_bbox[:, 0], -1) + 0.5 * src_width     # x1+0.5w
-    src_ctr_y   = torch.unsqueeze(src_bbox[:, 1], -1) + 0.5 * src_height    # y1+0.5h
+    src_width   = torch.unsqueeze(src_bbox[:, 2] - src_bbox[:, 0], -1)      # x2-x1     [bbox_num, 1]
+    src_height  = torch.unsqueeze(src_bbox[:, 3] - src_bbox[:, 1], -1)      # y2-y1     [bbox_num, 1]
+    src_ctr_x   = torch.unsqueeze(src_bbox[:, 0], -1) + 0.5 * src_width     # x1+0.5w   [bbox_num, 1]
+    src_ctr_y   = torch.unsqueeze(src_bbox[:, 1], -1) + 0.5 * src_height    # y1+0.5h   [bbox_num, 1]
 
     #-----------------------------------#
     #   获取调整参数
     #   每隔4个取一次
     #-----------------------------------#
-    dx          = loc[:, 0::4]
-    dy          = loc[:, 1::4]
-    dw          = loc[:, 2::4]
-    dh          = loc[:, 3::4]
+    dx          = loc[:, 0::4]  # [bbox_num, 1]
+    dy          = loc[:, 1::4]  # [bbox_num, 1]
+    dw          = loc[:, 2::4]  # [bbox_num, 1]
+    dh          = loc[:, 3::4]  # [bbox_num, 1]
 
     #-----------------------------------#
     #   调整先验框中心和宽高
@@ -41,7 +45,7 @@ def loc2bbox(src_bbox, loc):
     h = torch.exp(dh) * src_height
 
     #-----------------------------------#
-    #   将调整后的中心和宽高转换为左上角,右下角坐标
+    #   cxcywh2xyxy
     #-----------------------------------#
     dst_bbox = torch.zeros_like(loc)
     dst_bbox[:, 0::4] = ctr_x - 0.5 * w
@@ -49,7 +53,7 @@ def loc2bbox(src_bbox, loc):
     dst_bbox[:, 2::4] = ctr_x + 0.5 * w
     dst_bbox[:, 3::4] = ctr_y + 0.5 * h
 
-    return dst_bbox
+    return dst_bbox     # [bbox_num, 4]
 
 """建议框解码"""
 class DecodeBox():
@@ -74,11 +78,11 @@ class DecodeBox():
 
     def forward(self, roi_cls_locs, roi_scores, rois, image_shape, input_shape, nms_iou = 0.3, confidence = 0.5):
         """
-        roi_cls_locs: 建议框的调整参数      [B, 300, num_classes*4]  针对每个类别都预测一个框,和yolo只预测1个框和这个框的种类不同
+        roi_cls_locs: 建议框的调整参数      [B, 300, num_classes*4]  针对每个类别都预测一个框的调整值,和yolo只预测1个框和这个框的种类不同
         roi_scores:   建议框的种类得分      [B, 300, num_classes]
         rois:         建议框的坐标          [B, 300, 4]
-        image_shape:  原图大小              [1330, 1330]
-        input_shape:  调整短边为600后的大小   [600, 600]
+        image_shape:  原图大小             [1330, 1330]
+        input_shape:  调整短边为600后的大小 [600, 600]
         """
         results = []
         bs      = len(roi_cls_locs)
